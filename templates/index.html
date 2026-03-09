@@ -135,6 +135,45 @@
             font-weight: 600;
         }
 
+        .controls {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f0f0f0;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .toggle-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .toggle-btn:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+
+        .toggle-btn:active {
+            transform: translateY(0);
+        }
+
+        .toggle-btn.active {
+            background: #4CAF50;
+        }
+
+        .toggle-btn.inactive {
+            background: #f44336;
+        }
+
         footer {
             margin-top: 30px;
             text-align: center;
@@ -198,6 +237,21 @@
                 {% endif %}
             </div>
 
+            <!-- YOLO Controls -->
+            <div class="controls">
+                <button id="yoloToggle" class="toggle-btn {% if yolo_enabled %}active{% else %}inactive{% endif %}" onclick="toggleYOLO()">
+                    <span id="yoloStatus">{% if yolo_enabled %}🟢 YOLO Detection: ON{% else %}🔴 YOLO Detection: OFF{% endif %}</span>
+                </button>
+                
+                <button id="trackingToggle" class="toggle-btn inactive" onclick="toggleTracking()" style="margin-left: 10px;">
+                    <span id="trackingStatus">📍 Tracking: OFF</span>
+                </button>
+                
+                <button class="toggle-btn" onclick="viewLogs()" style="margin-left: 10px; background: #FF9800;">
+                    📊 View Activity Logs
+                </button>
+            </div>
+
             <div class="info-grid">
                 <div class="info-card">
                     <h3>Device</h3>
@@ -216,6 +270,33 @@
                     <p>640 x 480</p>
                 </div>
             </div>
+
+            <!-- Live Statistics Dashboard -->
+            <div id="statsSection" style="margin-top:20px; padding:15px; background:#f8f9fa; border-radius:8px; display:none;">
+                <h3 style="color:#667eea; margin-bottom:15px;">📊 Live Statistics (Last 5 min)</h3>
+                <div class="info-grid">
+                    <div class="info-card" style="border-left-color:#4CAF50;">
+                        <h3>Total Pigs</h3>
+                        <p id="statTotalPigs">0</p>
+                    </div>
+                    <div class="info-card" style="border-left-color:#4CAF50;">
+                        <h3>Healthy</h3>
+                        <p id="statHealthy" style="color:#4CAF50;">0</p>
+                    </div>
+                    <div class="info-card" style="border-left-color:#FF9800;">
+                        <h3>Inactive</h3>
+                        <p id="statInactive" style="color:#FF9800;">0</p>
+                    </div>
+                    <div class="info-card" style="border-left-color:#f44336;">
+                        <h3>Heat Stress</h3>
+                        <p id="statHeatStress" style="color:#f44336;">0</p>
+                    </div>
+                    <div class="info-card" style="border-left-color:#2196F3;">
+                        <h3>Cold Stress</h3>
+                        <p id="statColdStress" style="color:#2196F3;">0</p>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <footer>
@@ -224,15 +305,220 @@
         </footer>
     </div>
 
+    <!-- Activity Logs Modal -->
+    <div id="logsModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:1000; overflow:auto;">
+        <div style="background:white; margin:50px auto; padding:30px; max-width:800px; border-radius:15px; position:relative;">
+            <button onclick="closeLogs()" style="position:absolute; top:10px; right:15px; background:#f44336; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer; font-size:1.2em;">✕</button>
+            
+            <h2 style="color:#667eea; margin-bottom:20px;">🐷 Activity Logs</h2>
+            
+            <div style="margin-bottom:15px;">
+                <button onclick="refreshLogs()" style="background:#4CAF50; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer; margin-right:10px;">🔄 Refresh</button>
+                <button onclick="clearLogs()" style="background:#f44336; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer;">🗑️ Clear Logs</button>
+                <button onclick="downloadLogs()" style="background:#ADD8E6; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer;">⬇️ Download Logs (CSV)</button>
+            </div>
+            
+            <div id="logsContent" style="max-height:500px; overflow-y:auto; background:#f8f9fa; padding:15px; border-radius:8px; font-family:monospace; font-size:0.9em;">
+                Loading logs...
+            </div>
+        </div>
+    </div>
+
     <script>
-        // Optional: Add timestamp or additional functionality
-        console.log('Camera feed loaded successfully');
+        // Toggle YOLO detection
+        function toggleYOLO() {
+            fetch('/toggle_yolo')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const btn = document.getElementById('yoloToggle');
+                        const status = document.getElementById('yoloStatus');
+                        
+                        if (data.yolo_enabled) {
+                            btn.classList.remove('inactive');
+                            btn.classList.add('active');
+                            status.textContent = '🟢 YOLO Detection: ON';
+                        } else {
+                            btn.classList.remove('active');
+                            btn.classList.add('inactive');
+                            status.textContent = '🔴 YOLO Detection: OFF';
+                            
+                            // Also disable tracking if YOLO is turned off
+                            const trackBtn = document.getElementById('trackingToggle');
+                            const trackStatus = document.getElementById('trackingStatus');
+                            trackBtn.classList.remove('active');
+                            trackBtn.classList.add('inactive');
+                            trackStatus.textContent = '📍 Tracking: OFF';
+                        }
+                    } else {
+                        alert('YOLO not available. Please load a model first.');
+                    }
+                })
+                .catch(error => console.error('Error toggling YOLO:', error));
+        }
+
+        // Toggle tracking mode
+        function toggleTracking() {
+            fetch('/toggle_tracking')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const btn = document.getElementById('trackingToggle');
+                        const status = document.getElementById('trackingStatus');
+                        
+                        if (data.tracking_enabled) {
+                            btn.classList.remove('inactive');
+                            btn.classList.add('active');
+                            status.textContent = '📍 Tracking: ON';
+                            
+                            // Show statistics dashboard
+                            document.getElementById('statsSection').style.display = 'block';
+                            updateStats();
+                            // Update stats every 5 seconds
+                            if (!window.statsInterval) {
+                                window.statsInterval = setInterval(updateStats, 5000);
+                            }
+                        } else {
+                            btn.classList.remove('active');
+                            btn.classList.add('inactive');
+                            status.textContent = '📍 Tracking: OFF';
+                            
+                            // Hide statistics dashboard
+                            document.getElementById('statsSection').style.display = 'none';
+                            if (window.statsInterval) {
+                                clearInterval(window.statsInterval);
+                                window.statsInterval = null;
+                            }
+                        }
+                    } else {
+                        alert(data.message || 'Please enable YOLO detection first.');
+                    }
+                })
+                .catch(error => console.error('Error toggling tracking:', error));
+        }
+
+        // Update statistics dashboard
+        function updateStats() {
+            fetch('/get_summary')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('statTotalPigs').textContent = data.total_pigs;
+                    document.getElementById('statHealthy').textContent = data.healthy;
+                    document.getElementById('statInactive').textContent = data.inactive;
+                    document.getElementById('statHeatStress').textContent = data.heat_stress;
+                    document.getElementById('statColdStress').textContent = data.cold_stress;
+                })
+                .catch(error => console.error('Error updating stats:', error));
+        }
+
+        // View activity logs
+        function viewLogs() {
+            document.getElementById('logsModal').style.display = 'block';
+            refreshLogs();
+        }
+
+        // Close logs modal
+        function closeLogs() {
+            document.getElementById('logsModal').style.display = 'none';
+        }
+
+        function downloadLogs() {
+            window.location.href = "/download_logs";
+        }
+
+        // Refresh logs
+        function refreshLogs() {
+            fetch('/get_logs')
+                .then(response => response.json())
+                .then(data => {
+                    const logsContent = document.getElementById('logsContent');
+                    if (data.logs.length === 0) {
+                        logsContent.innerHTML = '<p style="color:#999;">No activity logs yet. Enable tracking to start logging.</p>';
+                    } else {
+                        let html = '<table style="width:100%; border-collapse:collapse; font-size:0.85em;">';
+                        html += '<tr style="background:#667eea; color:white;">';
+                        html += '<th style="padding:8px;">Time</th>';
+                        html += '<th>ID</th>';
+                        html += '<th>Growth</th>';
+                        html += '<th>Inactive</th>';
+                        html += '<th>Status</th>';
+                        html += '<th>Temp (°C)</th>';
+                        html += '<th>Temp Status</th>';
+                        html += '</tr>';
+                        
+                        data.logs.forEach(log => {
+                            const date = new Date(log.timestamp);
+                            const timeStr = date.toLocaleTimeString();
+                            
+                            // Color coding
+                            let statusColor = '#4CAF50';
+                            if (log.status === 'INACTIVE') statusColor = '#FF9800';
+                            
+                            let tempColor = '#4CAF50';
+                            let tempBg = 'transparent';
+                            if (log.alert_level === 'CRITICAL') {
+                                tempColor = '#fff';
+                                tempBg = '#f44336';
+                            } else if (log.alert_level === 'WARNING') {
+                                tempColor = '#fff';
+                                tempBg = '#2196F3';
+                            }
+                            
+                            html += `<tr style="border-bottom:1px solid #ddd;">
+                                <td style="padding:8px;">${timeStr}</td>
+                                <td>${log.track_id}</td>
+                                <td>${log.growth_label}</td>
+                                <td>${log.time_since_move_sec}s</td>
+                                <td style="color:${statusColor}; font-weight:bold;">${log.status}</td>
+                                <td style="font-weight:bold;">${log.temperature !== null ? log.temperature : 'N/A'}</td>
+                                <td style="color:${tempColor}; background:${tempBg}; font-weight:bold; padding:4px;">
+                                    ${log.temp_warning || 'N/A'}
+                                </td>
+                            </tr>`;
+                        });
+                        
+                        html += '</table>';
+                        logsContent.innerHTML = html;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching logs:', error);
+                    document.getElementById('logsContent').innerHTML = '<p style="color:red;">Error loading logs.</p>';
+                });
+        }
+
+        // Clear logs
+        function clearLogs() {
+            if (confirm('Are you sure you want to clear all activity logs?')) {
+                fetch('/clear_logs')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            refreshLogs();
+                            alert('Logs cleared successfully!');
+                        }
+                    })
+                    .catch(error => console.error('Error clearing logs:', error));
+            }
+        }
+
+        // Monitor camera feeds
+        console.log('Pig Growth Monitoring System loaded');
         
-        // Monitor image loading
-        const cameraFeed = document.querySelector('.camera-feed');
-        cameraFeed.addEventListener('error', function() {
-            console.error('Error loading camera feed');
+        const cameraFeeds = document.querySelectorAll('.camera-feed');
+        cameraFeeds.forEach(feed => {
+            feed.addEventListener('error', function() {
+                console.error('Error loading camera feed:', this.src);
+            });
         });
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('logsModal');
+            if (event.target === modal) {
+                closeLogs();
+            }
+        }
     </script>
 </body>
 </html>
